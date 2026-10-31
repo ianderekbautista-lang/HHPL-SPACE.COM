@@ -1,0 +1,645 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SPACE 0.10v</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#030713;color:white;font-family:Arial;text-align:center}
+h1{color:#36eaff;font-size:40px;text-shadow:0 0 18px #00bfff}
+button{background:#087dcc;color:white;border:2px solid #39dfff;padding:11px 15px;margin:6px;border-radius:8px;cursor:pointer}
+button:hover{background:#13a9db}
+button:disabled{opacity:.4;cursor:not-allowed}
+.screen{padding:15px}
+.hidden{display:none!important}
+#hud{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;padding:10px}
+#gameLayout{display:flex;justify-content:center;align-items:stretch;gap:12px;max-width:1150px;margin:10px auto;padding:0 10px}
+#gameArea{flex:1;min-width:0}
+#game{display:block;width:100%;height:auto;background:#050b1c;border:3px solid #26caff;border-radius:8px;cursor:crosshair}
+#sideMenu{width:145px;min-width:125px;background:#101d37;border:1px solid #247eb7;border-radius:10px;padding:12px;display:flex;flex-direction:column;justify-content:center;gap:10px}
+#sideMenu button{width:100%;margin:0}
+#bossPanel{color:#ff7373;font-weight:bold}
+#bossBar{background:#ff3333;height:13px;width:100%}
+#ships{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;max-width:1100px;margin:auto}
+.card{background:#101d37;border:1px solid #247eb7;border-radius:12px;padding:12px}
+.selected{border:2px solid #43ff9b}
+.shipIcon{font-size:45px;margin:8px}
+#shopCoins{color:#ffdb45;font-size:20px}
+#instructions{color:#b7d8ee;font-size:14px}
+@media(max-width:650px){
+ #gameLayout{flex-direction:column}
+ #sideMenu{width:100%;flex-direction:row;flex-wrap:wrap}
+ #sideMenu h3{width:100%}
+ #sideMenu button{width:auto;flex:1}
+}
+</style>
+</head>
+<body>
+
+<h1>🚀 SPACE 0.10v</h1>
+<p>¡Llega al nivel 300 y derrota al jefe final!</p>
+
+<div id="menu" class="screen">
+ <h2>MENÚ PRINCIPAL</h2>
+ <button onclick="startGame(1)">▶ JUGAR</button>
+ <button onclick="showLevels()">🌌 NIVELES</button>
+ <button onclick="showShop()">🛸 TIENDA DE NAVES</button>
+ <h3>🪙 Monedas: <span id="menuCoins">0</span></h3>
+ <p id="menuShip"></p>
+ <p>🏆 Nivel final: 300</p>
+</div>
+
+<div id="levels" class="screen hidden">
+ <h2>🌌 NIVELES</h2>
+ <p>¡300 niveles hasta el jefe final!</p>
+ <div id="levelButtons"></div>
+ <button onclick="showMenu()">VOLVER</button>
+</div>
+
+<div id="shop" class="screen hidden">
+ <h2>🛸 TIENDA DE 50 NAVES</h2>
+ <p id="shopCoins"></p>
+ <div id="ships"></div>
+ <button onclick="showMenu()">VOLVER AL MENÚ</button>
+</div>
+
+<div id="gameScreen" class="hidden">
+ <div id="hud">
+  <span>❤️ Vidas: <b id="lives">3</b></span>
+  <span>⭐ Puntos: <b id="score">0</b></span>
+  <span>🪙 Monedas: <b id="coinsHUD">0</b></span>
+  <span>💣 Bombas: <b id="bombs">0</b></span>
+  <span>⚡ Láser: <b id="laser">0</b></span>
+  <span>🌌 Nivel: <b id="levelHUD">1</b></span>
+ </div>
+
+ <div id="bossPanel" class="hidden">
+  <div id="bossName">👹 JEFE</div>
+  <span id="bossHP"></span>
+  <div style="background:#411;width:min(85%,600px);height:13px;margin:5px auto">
+   <div id="bossBar"></div>
+  </div>
+ </div>
+
+ <div id="gameLayout">
+  <div id="gameArea">
+   <canvas id="game" width="900" height="550"></canvas>
+   <p id="instructions">
+    WASD/Flechas: moverse · Ratón: apuntar<br>
+    Clic izquierdo: disparar · Clic derecho: bomba<br>
+    F: bomba · G: láser
+   </p>
+  </div>
+  <aside id="sideMenu">
+   <h3>🚀 MENÚ</h3>
+   <button onclick="pauseGame()">⏸ PAUSAR</button>
+   <button onclick="showMenu()">🏠 VOLVER AL MENÚ</button>
+   <button onclick="showShop()">🛸 TIENDA</button>
+  </aside>
+ </div>
+</div>
+
+<div id="endScreen" class="screen hidden">
+ <h2 id="endTitle"></h2>
+ <p id="endText"></p>
+ <div id="endButtons"></div>
+</div>
+
+<div id="pauseScreen" class="screen hidden">
+ <h2>⏸ JUEGO PAUSADO</h2>
+ <button onclick="resumeGame()">CONTINUAR</button>
+ <button onclick="showMenu()">MENÚ</button>
+</div>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+const icons=["🚀","🛸","🌟","☄️","👾","💎","🛰️","✨","🔥","🌌","🌠","🔷","🪐","⚡","🌈"];
+const shipData=[];
+let price=150n;
+
+for(let i=0;i<50;i++){
+ if(i===0){
+  shipData.push({name:"Nave básica",icon:"🚀",price:0n,speed:4.2,rate:12,damage:1});
+ }else{
+  shipData.push({
+   name:i===49?"NAVE SUPREMA":"Nave espacial "+(i+1),
+   icon:i===49?"💎":icons[i%icons.length],
+   price:i===49?3000000000000000000000n:price,
+   speed:Math.min(12,4.2+i*.16),
+   rate:Math.max(1,12-Math.floor(i/4)),
+   damage:i===49?1000:Math.min(100,1+i*2)
+  });
+  price=price*24n/10n;
+ }
+}
+
+const FINAL_HP=BigInt("100000000000000000000000000000000000000000000000000000000");
+
+let coins=BigInt(localStorage.getItem("spaceCoins")||"0");
+let unlocked=JSON.parse(localStorage.getItem("spaceShips")||"[0]");
+let selected=Number(localStorage.getItem("spaceShip")||0);
+let maxLevel=Number(localStorage.getItem("spaceLevel")||1);
+let finalWon=localStorage.getItem("spaceFinalWon")==="true";
+
+if(!unlocked.includes(0))unlocked.push(0);
+if(!unlocked.includes(selected))selected=0;
+if(!shipData[selected])selected=0;
+maxLevel=Math.min(300,Math.max(1,maxLevel));
+
+let level=1,score=0,lives=3,kills=0;
+let player,bullets=[],enemies=[],enemyBullets=[],powerups=[],bombs=[];
+let boss=null,frame=0,playing=false,paused=false;
+let mouse={x:450,y:200},mouseDown=false,keys={};
+let bombCount=0,laserTime=0;
+let stars=[];
+
+for(let i=0;i<120;i++){
+ stars.push({x:Math.random()*900,y:Math.random()*550,s:Math.random()*2+1});
+}
+
+const enemyTypes=[
+ {name:"Explorador",icon:"👾",hp:1,speed:1},
+ {name:"Cazador",icon:"👻",hp:2,speed:1.3},
+ {name:"Tanque",icon:"🤖",hp:5,speed:.7},
+ {name:"Alien rojo",icon:"👹",hp:7,speed:1.5},
+ {name:"Alien blindado",icon:"🐲",hp:12,speed:1.1},
+ {name:"Alien oscuro",icon:"👿",hp:20,speed:1.7},
+ {name:"Alien gigante",icon:"🦖",hp:35,speed:1.2},
+ {name:"Alien cósmico",icon:"🪼",hp:50,speed:2},
+ {name:"Alien supremo",icon:"🐙",hp:80,speed:1.8}
+];
+
+function formatCoins(n){return n.toLocaleString("en-US");}
+function save(){
+ localStorage.setItem("spaceCoins",coins.toString());
+ localStorage.setItem("spaceShips",JSON.stringify(unlocked));
+ localStorage.setItem("spaceShip",selected);
+ localStorage.setItem("spaceLevel",maxLevel);
+ localStorage.setItem("spaceFinalWon",String(finalWon));
+}
+function updateCoins(){
+ let value=formatCoins(coins);
+ document.getElementById("menuCoins").textContent=value;
+ document.getElementById("shopCoins").textContent="🪙 "+value+" monedas";
+ document.getElementById("coinsHUD").textContent=value;
+}
+function hideScreens(){
+ ["menu","levels","shop","gameScreen","endScreen","pauseScreen"].forEach(id=>{
+  document.getElementById(id).classList.add("hidden");
+ });
+}
+function showMenu(){
+ playing=false;paused=false;mouseDown=false;
+ hideScreens();
+ document.getElementById("menu").classList.remove("hidden");
+ document.getElementById("menuShip").textContent="Nave equipada: "+shipData[selected].name;
+ updateCoins();
+}
+function showLevels(){
+ hideScreens();
+ document.getElementById("levels").classList.remove("hidden");
+ let html="";
+ for(let i=1;i<=300;i++){
+  html+=`<button ${i>maxLevel?"disabled":""} onclick="startGame(${i})">
+   ${i===300?"👑 JEFE FINAL":"Nivel "+i} ${i>maxLevel?"🔒":"🌌"}
+  </button>`;
+ }
+ document.getElementById("levelButtons").innerHTML=html;
+}
+function showShop(){
+ hideScreens();
+ document.getElementById("shop").classList.remove("hidden");
+ updateCoins();
+ let html="";
+ shipData.forEach((s,i)=>{
+  let owned=unlocked.includes(i),equipped=selected===i;
+  html+=`<div class="card ${equipped?"selected":""}">
+   <div class="shipIcon">${s.icon}</div>
+   <h3>${s.name}</h3>
+   <p>Nave ${i+1} de 50</p>
+   <p>Velocidad: ${s.speed}</p>
+   <p>Potencia: ${s.damage}</p>
+   <p>Disparo: ${s.rate}</p>
+   <p>🪙 ${formatCoins(s.price)}</p>
+   ${equipped?'<button disabled>EQUIPADA</button>':
+   owned?`<button onclick="equipShip(${i})">EQUIPAR</button>`:
+   `<button ${coins<s.price?"disabled":""} onclick="buyShip(${i})">COMPRAR</button>`}
+  </div>`;
+ });
+ document.getElementById("ships").innerHTML=html;
+}
+function buyShip(i){
+ let s=shipData[i];
+ if(unlocked.includes(i)||coins<s.price)return;
+ coins-=s.price;unlocked.push(i);selected=i;save();showShop();
+}
+function equipShip(i){
+ if(!unlocked.includes(i))return;
+ selected=i;save();showShop();
+}
+
+function startGame(n=1){
+ if(finalWon&&n>300)return;
+ level=Math.min(300,Math.max(1,Math.floor(n)));
+ score=0;kills=0;lives=3;bombCount=0;laserTime=0;frame=0;
+ bullets=[];enemies=[];enemyBullets=[];powerups=[];bombs=[];boss=null;
+ player={x:450,y:440,angle:-Math.PI/2,invincible:0};
+ keys={};mouseDown=false;paused=false;playing=true;
+ hideScreens();
+ document.getElementById("gameScreen").classList.remove("hidden");
+ document.getElementById("levelHUD").textContent=level;
+ document.getElementById("bossPanel").classList.add("hidden");
+ if(level!==300)spawnEnemies();
+ updateHUD();
+ requestAnimationFrame(loop);
+}
+
+function spawnEnemies(){
+ let amount=level*30;
+ let typeIndex=Math.min(enemyTypes.length-1,Math.floor((level-1)/10));
+ let type=enemyTypes[typeIndex];
+
+ for(let i=0;i<amount;i++){
+  let side=Math.floor(Math.random()*4);
+  let x=side===0?0:side===1?900:Math.random()*900;
+  let y=side===2?0:side===3?550:Math.random()*550;
+  enemies.push({
+   x,y,
+   hp:Math.ceil(type.hp+level*.15),
+   speed:type.speed+Math.min(2,level*.005),
+   icon:type.icon,
+   r:13,dead:false
+  });
+ }
+}
+
+function updateHUD(){
+ document.getElementById("lives").textContent=lives;
+ document.getElementById("score").textContent=score;
+ document.getElementById("bombs").textContent=bombCount;
+ document.getElementById("laser").textContent=laserTime>0?Math.ceil(laserTime/60):0;
+ updateCoins();
+}
+function getMouse(e){
+ let r=canvas.getBoundingClientRect();
+ mouse.x=(e.clientX-r.left)*canvas.width/r.width;
+ mouse.y=(e.clientY-r.top)*canvas.height/r.height;
+}
+canvas.addEventListener("mousemove",getMouse);
+canvas.addEventListener("mousedown",e=>{
+ getMouse(e);
+ if(e.button===0)mouseDown=true;
+ if(e.button===2&&playing&&!paused)throwBomb();
+});
+window.addEventListener("mouseup",e=>{if(e.button===0)mouseDown=false;});
+canvas.addEventListener("mouseleave",()=>mouseDown=false);
+canvas.addEventListener("contextmenu",e=>e.preventDefault());
+
+window.addEventListener("keydown",e=>{
+ let k=e.key.toLowerCase();
+ if([" ","arrowup","arrowdown","arrowleft","arrowright"].includes(k))e.preventDefault();
+ if(!keys[k]){
+  if(k==="f"&&playing&&!paused)throwBomb();
+  if(k==="g"&&playing&&!paused)activateLaser();
+ }
+ keys[k]=true;
+});
+window.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+
+function throwBomb(){
+ if(!playing||paused||bombCount<=0)return;
+ bombCount--;
+ bombs.push({x:player.x,y:player.y,r:0,life:35,exploded:false});
+ updateHUD();
+}
+function activateLaser(){
+ if(laserTime>0)return;
+ laserTime=600;updateHUD();
+}
+function dropPowerup(x,y){
+ let r=Math.random()*100;
+ if(r<3)powerups.push({x,y,type:"life"});
+ else if(r<13)powerups.push({x,y,type:"bomb"});
+ else if(r<53)powerups.push({x,y,type:"laser"});
+}
+function killEnemy(e){
+ if(e.dead)return;
+ e.dead=true;kills++;score+=10;
+ coins+=BigInt(level)*5n;
+ dropPowerup(e.x,e.y);save();
+}
+function hurtPlayer(){
+ if(player.invincible>0||!playing)return;
+ lives--;player.invincible=90;updateHUD();
+ if(lives<=0)endGame(false);
+}
+
+function spawnBoss(){
+ let final=level===300;
+ boss={
+  x:450,y:100,
+  hp:final?FINAL_HP:BigInt(300*level),
+  max:final?FINAL_HP:BigInt(300*level),
+  fire:0,dir:1,
+  final
+ };
+ document.getElementById("bossPanel").classList.remove("hidden");
+ document.getElementById("bossName").textContent=
+  final?"👑 JEFE FINAL DEL UNIVERSO":"👹 JEFE DEL NIVEL "+level;
+}
+
+function angleDifference(a,b){
+ return Math.atan2(Math.sin(a-b),Math.cos(a-b));
+}
+
+function updateBoss(){
+ if(!boss)return;
+
+ boss.x+=boss.dir*(1.5+level*.08);
+ if(boss.x>820||boss.x<80)boss.dir*=-1;
+ boss.y=100+Math.sin(frame/35)*25;
+
+ if(boss.final){
+  // 7 proyectiles por fotograma a 60 FPS = 420 por segundo.
+  let aim=Math.atan2(player.y-boss.y,player.x-boss.x);
+  for(let i=0;i<7;i++){
+   let spread=(i-3)*.10;
+   let a=aim+spread;
+   let speed=9+Math.random()*4;
+   enemyBullets.push({
+    x:boss.x,y:boss.y+25,
+    vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,
+    r:6,dead:false
+   });
+  }
+ }else{
+  boss.fire++;
+  let fireSpeed=Math.max(6,72-(level-1)*6);
+  if(boss.fire>=fireSpeed){
+   boss.fire=0;
+   let a=Math.atan2(player.y-boss.y,player.x-boss.x);
+   let speed=3+level*.15;
+   enemyBullets.push({
+    x:boss.x,y:boss.y+25,
+    vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,
+    r:8,dead:false
+   });
+  }
+ }
+
+ if(boss.hp<=0){
+  let wasFinal=boss.final;
+  boss=null;
+  document.getElementById("bossPanel").classList.add("hidden");
+  coins+=100n*BigInt(level)*BigInt(level);
+  score+=500;
+  if(wasFinal){
+   finalWon=true;
+   maxLevel=300;
+  }else{
+   maxLevel=Math.max(maxLevel,level+1);
+  }
+  save();
+  endGame(true,wasFinal);
+ }
+}
+
+function loop(){
+ if(!playing||paused)return;
+ frame++;update();draw();
+ if(playing)requestAnimationFrame(loop);
+}
+
+function update(){
+ let ship=shipData[selected];
+ let speed=ship.speed;
+
+ if(keys["w"]||keys["arrowup"])player.y-=speed;
+ if(keys["s"]||keys["arrowdown"])player.y+=speed;
+ if(keys["a"]||keys["arrowleft"])player.x-=speed;
+ if(keys["d"]||keys["arrowright"])player.x+=speed;
+
+ player.x=Math.max(20,Math.min(880,player.x));
+ player.y=Math.max(20,Math.min(530,player.y));
+ player.angle=Math.atan2(mouse.y-player.y,mouse.x-player.x);
+ if(player.invincible>0)player.invincible--;
+
+ if((keys[" "]||mouseDown)&&frame%ship.rate===0){
+  bullets.push({
+   x:player.x+Math.cos(player.angle)*24,
+   y:player.y+Math.sin(player.angle)*24,
+   vx:Math.cos(player.angle)*10,
+   vy:Math.sin(player.angle)*10,
+   dead:false
+  });
+ }
+
+ bullets.forEach(b=>{
+  b.x+=b.vx;b.y+=b.vy;
+  if(b.x<0||b.x>900||b.y<0||b.y>550)b.dead=true;
+ });
+ bullets=bullets.filter(b=>!b.dead);
+
+ enemies.forEach(e=>{
+  if(e.dead)return;
+  let a=Math.atan2(player.y-e.y,player.x-e.x);
+  e.x+=Math.cos(a)*e.speed;e.y+=Math.sin(a)*e.speed;
+  if(Math.hypot(player.x-e.x,player.y-e.y)<24)hurtPlayer();
+
+  bullets.forEach(b=>{
+   if(!b.dead&&Math.hypot(b.x-e.x,b.y-e.y)<e.r+5){
+    b.dead=true;e.hp-=ship.damage;
+    if(e.hp<=0)killEnemy(e);
+   }
+  });
+
+  if(laserTime>0){
+   let aLaser=Math.atan2(e.y-player.y,e.x-player.x);
+   let distance=Math.hypot(e.x-player.x,e.y-player.y);
+   if(distance<650&&Math.abs(angleDifference(aLaser,player.angle))<.12&&frame%12===0){
+    e.hp-=3;if(e.hp<=0)killEnemy(e);
+   }
+  }
+ });
+ enemies=enemies.filter(e=>!e.dead);
+
+ powerups.forEach(p=>{
+  if(Math.hypot(p.x-player.x,p.y-player.y)<25){
+   p.dead=true;
+   if(p.type==="life")lives+=5;
+   if(p.type==="bomb")bombCount++;
+   if(p.type==="laser")laserTime=Math.max(laserTime,600);
+   updateHUD();
+  }
+ });
+ powerups=powerups.filter(p=>!p.dead);
+
+ bombs.forEach(b=>{
+  b.r+=9;b.life--;
+  if(!b.exploded){
+   b.exploded=true;
+   enemies.forEach(e=>{
+    if(!e.dead&&Math.hypot(e.x-b.x,e.y-b.y)<180)killEnemy(e);
+   });
+   if(boss&&Math.hypot(boss.x-b.x,boss.y-b.y)<180){
+    boss.hp-=100n;
+   }
+  }
+ });
+ bombs=bombs.filter(b=>b.life>0);
+
+ enemyBullets.forEach(b=>{
+  b.x+=b.vx;b.y+=b.vy;
+  if(Math.hypot(player.x-b.x,player.y-b.y)<20){
+   b.dead=true;hurtPlayer();
+  }
+ });
+ enemyBullets=enemyBullets.filter(b=>
+  !b.dead&&b.x>-30&&b.x<930&&b.y>-30&&b.y<580
+ );
+
+ if(!boss&&level===300&&enemies.length===0)spawnBoss();
+ if(!boss&&level!==300&&kills>=level*30&&enemies.length===0)spawnBoss();
+
+ if(boss){
+  updateBoss();
+  if(boss){
+   bullets.forEach(b=>{
+    if(!b.dead&&Math.hypot(b.x-boss.x,b.y-boss.y)<35){
+     b.dead=true;
+     boss.hp-=BigInt(ship.damage);
+    }
+   });
+
+   if(laserTime>0&&frame%6===0){
+    let aLaser=Math.atan2(boss.y-player.y,boss.x-player.x);
+    if(Math.abs(angleDifference(aLaser,player.angle))<.15){
+     boss.hp-=5n;
+    }
+   }
+
+   if(Math.hypot(player.x-boss.x,player.y-boss.y)<40)hurtPlayer();
+
+   document.getElementById("bossHP").textContent=
+    boss.hp.toLocaleString("en-US")+" / "+boss.max.toLocaleString("en-US");
+
+   // Calcula la barra sin convertir la vida gigantesca a Number.
+   let percent=Number(boss.hp*10000n/boss.max)/100;
+   document.getElementById("bossBar").style.width=Math.max(0,percent)+"%";
+  }
+ }
+
+ if(laserTime>0)laserTime--;
+ if(frame%10===0)updateHUD();
+}
+
+function draw(){
+ ctx.fillStyle="#050b1c";
+ ctx.fillRect(0,0,900,550);
+
+ stars.forEach(s=>{
+  ctx.fillStyle="rgba(255,255,255,.7)";
+  ctx.fillRect(s.x,s.y,s.s,s.s);
+ });
+
+ powerups.forEach(p=>{
+  ctx.font="25px Arial";
+  ctx.fillText(p.type==="life"?"❤️":p.type==="bomb"?"💣":"⚡",p.x-12,p.y+9);
+ });
+
+ bombs.forEach(b=>{
+  ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);
+  ctx.fillStyle="rgba(255,150,20,.22)";ctx.fill();
+  ctx.strokeStyle="#ffae22";ctx.lineWidth=3;ctx.stroke();
+ });
+
+ enemies.forEach(e=>{
+  ctx.font="25px Arial";
+  ctx.fillText(e.icon,e.x-13,e.y+9);
+  if(e.hp>1){
+   ctx.fillStyle="#f33";
+   ctx.fillRect(e.x-13,e.y-18,26,3);
+  }
+ });
+
+ bullets.forEach(b=>{
+  ctx.fillStyle="#64faff";
+  ctx.beginPath();ctx.arc(b.x,b.y,5,0,Math.PI*2);ctx.fill();
+ });
+
+ enemyBullets.forEach(b=>{
+  ctx.fillStyle=boss&&boss.final?"#ff38e8":"#ff4444";
+  ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fill();
+ });
+
+ if(boss){
+  ctx.font=boss.final?"85px Arial":"58px Arial";
+  ctx.fillText(boss.final?"👑":"👹",boss.x-(boss.final?42:30),boss.y+25);
+ }
+
+ if(laserTime>0){
+  ctx.strokeStyle="#55ffff";ctx.lineWidth=8;ctx.globalAlpha=.7;
+  ctx.beginPath();ctx.moveTo(player.x,player.y);
+  ctx.lineTo(player.x+Math.cos(player.angle)*700,player.y+Math.sin(player.angle)*700);
+  ctx.stroke();ctx.globalAlpha=1;
+ }
+
+ ctx.save();
+ ctx.translate(player.x,player.y);
+ ctx.rotate(player.angle+Math.PI/2);
+ ctx.font="36px Arial";ctx.textAlign="center";ctx.textBaseline="middle";
+ ctx.globalAlpha=player.invincible>0&&frame%8<4?.35:1;
+ ctx.fillText(shipData[selected].icon,0,0);
+ ctx.restore();ctx.globalAlpha=1;
+}
+
+function endGame(win,final=false){
+ playing=false;mouseDown=false;
+ hideScreens();
+ document.getElementById("endScreen").classList.remove("hidden");
+
+ if(win&&final){
+  document.getElementById("endTitle").textContent="👑 ¡VICTORIA FINAL!";
+  document.getElementById("endText").textContent=
+   "¡DERROTASTE AL JEFE FINAL! ¡Has conquistado los 300 niveles del universo!";
+  document.getElementById("endButtons").innerHTML=`
+   <button onclick="startGame(300)">VOLVER A JUGAR EL NIVEL 300</button>
+   <button onclick="showMenu()">MENÚ PRINCIPAL</button>`;
+ }else if(win){
+  document.getElementById("endTitle").textContent="🏆 ¡JEFE DERROTADO!";
+  document.getElementById("endText").textContent=
+   "¡Ganaste el nivel "+level+"! Recibiste "+formatCoins(100n*BigInt(level)*BigInt(level))+" monedas.";
+  document.getElementById("endButtons").innerHTML=`
+   <button onclick="startGame(${level+1})">🚀 SIGUIENTE NIVEL ${level+1}</button>
+   <button onclick="showLevels()">🌌 VER NIVELES</button>
+   <button onclick="showMenu()">MENÚ</button>`;
+ }else{
+  document.getElementById("endTitle").textContent="💥 FIN DEL JUEGO";
+  document.getElementById("endText").textContent="Llegaste a "+score+" puntos.";
+  document.getElementById("endButtons").innerHTML=`
+   <button onclick="startGame(${level})">🔄 REINTENTAR</button>
+   <button onclick="showMenu()">MENÚ</button>`;
+ }
+ updateCoins();
+}
+
+function pauseGame(){
+ if(!playing)return;
+ paused=true;mouseDown=false;
+ document.getElementById("pauseScreen").classList.remove("hidden");
+}
+function resumeGame(){
+ document.getElementById("pauseScreen").classList.add("hidden");
+ paused=false;mouseDown=false;
+ requestAnimationFrame(loop);
+}
+
+updateCoins();
+showMenu();
+</script>
+</body>
+</html>
